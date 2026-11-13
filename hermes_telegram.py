@@ -23,6 +23,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -501,6 +502,101 @@ def _link(name: str, target: Path, force: bool = False) -> tuple[bool, str]:
     return True, f"-> {target}"
 
 
+def install_shared(force: bool = False) -> int:
+    """Shared-database mode: the bot runs *as* the owner's Hermes home.
+
+    Hermes requires the session DB's resolved parent to equal HERMES_HOME
+    (gateway/run_runtime.py), so a separate home can never read the owner's
+    chats — symlinking state.db alone also gives each gateway its own -wal.
+    The only supported shape is one home, one DB, one gateway: the editable
+    adapter is installed as a *user plugin* inside the owner's home, and the
+    bot is started with that home.
+
+    `hermes update` rewrites the checkout, not ~/.hermes/plugins, so the
+    override survives updates.
+    """
+    print("\nHermes Telegram — install (shared database)")
+    print("─" * 44)
+
+    if not HERMES_CLI.exists():
+        print(f"✗ hermes CLI not found at {HERMES_CLI}")
+        print("  Install Hermes first, or set HERMES_CLI=/path/to/hermes")
+        return 1
+    try:
+        import subprocess
+        p = subprocess.run([str(HERMES_CLI), "--version"], capture_output=True, text=True, timeout=60)
+        ver = (p.stdout or p.stderr).strip().splitlines()[0] if (p.stdout or p.stderr).strip() else "?"
+        print(f"✓ hermes CLI: {ver[:60]}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"✗ cannot run hermes: {exc}")
+        return 1
+
+    owner_home = Path.home() / ".hermes"
+    if not (owner_home / "auth.json").exists():
+        print(f"✗ {owner_home}/auth.json missing — run `hermes` once and log in first.")
+        return 1
+    print(f"✓ owner install: {owner_home}")
+
+    ok = True
+
+    # 1. the editable adapter, as a user plugin inside the owner's home
+    src = HERE / "telegram-plugin"
+    dst = owner_home / "plugins" / "platforms" / "telegram"
+    if not src.is_dir():
+        print(f"✗ missing override source: {src}")
+        return 1
+    if dst.exists():
+        if not force:
+            print(f"✓ adapter present: {dst} (use --force to overwrite)")
+        else:
+            shutil.rmtree(dst)
+            shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
+            print(f"✓ adapter reinstalled: {dst}")
+    else:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
+        print(f"✓ adapter installed: {dst}")
+
+    # 2. enable it there, so the user copy wins over the bundled plugin
+    try:
+        import subprocess
+        p = subprocess.run([str(HERMES_CLI), "plugins", "enable", "telegram-platform"],
+                           capture_output=True, text=True, timeout=120,
+                           env={**os.environ, "HERMES_HOME": str(owner_home)})
+        good = p.returncode == 0
+        print(f"{'✓' if good else '✗'} plugin override enabled"
+              + ("" if good else f": {(p.stdout or p.stderr).strip()[:100]}"))
+        ok = ok and good
+    except Exception as exc:  # noqa: BLE001
+        print(f"✗ plugin enable failed: {exc}")
+        ok = False
+
+    # 3. token: the owner's .env is what this home reads
+    owner_env = owner_home / ".env"
+    if owner_env.exists() and "TELEGRAM_BOT_TOKEN=" in owner_env.read_text(encoding="utf-8", errors="replace"):
+        print("✓ owner .env has TELEGRAM_BOT_TOKEN")
+    else:
+        print(f"✗ {owner_env} has no TELEGRAM_BOT_TOKEN — add it, or run ./ht setup")
+
+    # 4. drop the separate home so nothing shadows the owner's
+    if BOT_HOME.exists() and BOT_HOME.is_dir() and not BOT_HOME.is_symlink():
+        moved = BOT_HOME.with_name(BOT_HOME.name + "_isolated_" + time.strftime("%Y%m%d_%H%M%S"))
+        try:
+            BOT_HOME.rename(moved)
+            print(f"✓ separate home moved aside: {moved.name}")
+        except OSError as exc:
+            print(f"! could not move separate home aside: {exc}")
+
+    print()
+    if not ok:
+        print("Some steps failed — fix the ✗ lines above and re-run with --force.")
+        return 1
+    print(f"The bot now runs with HERMES_HOME={owner_home}")
+    print("Start it with:  HERMES_HOME=%s ./ht up" % owner_home)
+    print("Restart after editing the adapter: kill -USR1 the gateway pid")
+    return 0
+
+
 def install_wizard(force: bool = False) -> int:
     """Wire this checkout into the Hermes install it should borrow from.
 
@@ -599,6 +695,8 @@ def main(argv: list[str]) -> int:
     if cmd == "setup":
         return setup_wizard()
     if cmd == "install":
+        if "--shared" in argv:
+            return install_shared(force="--force" in argv)
         return install_wizard(force="--force" in argv)
     if cmd == "run":
         return run_foreground(env)

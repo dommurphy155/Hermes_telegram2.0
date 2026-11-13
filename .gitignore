@@ -85,3 +85,9 @@ __pycache__/
 venv/
 node_modules/
 .DS_Store
+
+# isolated-home leftovers from pre-shared-database runs
+home_isolated_*/
+# the override source now lives in telegram-plugin/ (real files, committed)
+telegram-plugin/__pycache__/
+telegram-plugin/**/*.pyc

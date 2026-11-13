@@ -5,7 +5,8 @@
 # (home/), with an editable copy of the adapter at home/plugins/platforms/telegram/.
 # The install is shared (engine, venv, login, skills) but never modified.
 #
-#   ./ht install   wire this clone into the local Hermes install (run once)
+#   ./ht install           wire this clone into the local Hermes install (separate home)
+#   ./ht install --shared  run against the owner's home so it shares the owner's chats
 #   ./ht setup     token/chat-id wizard
 #   ./ht up        start the bot gateway (foreground; Ctrl-C to stop)
 #   ./ht down      stop it
@@ -18,6 +19,8 @@
 set -e
 
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# Default to this project's own home (isolated). Set HERMES_TELEGRAM_HOME to the
+# owner's ~/.hermes to run shared-database mode: `HERMES_TELEGRAM_HOME=~/.hermes ./ht up`
 BOT_HOME=${HERMES_TELEGRAM_HOME:-$DIR/home}
 export HERMES_HOME="$BOT_HOME"
 
@@ -56,7 +59,7 @@ case "${1:-}" in
     exec "$PY" "$DIR/hermes_telegram.py" send "$@"
     ;;
   *)
-    echo "usage: ./ht {install|setup|up|down|status|log|doctor|send \"text\"}"
+    echo "usage: ./ht {install [--shared]|setup|up|down|status|log|doctor|send \"text\"}"
     exit 2
     ;;
 esac
