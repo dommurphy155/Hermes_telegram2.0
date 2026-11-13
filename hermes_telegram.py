@@ -36,7 +36,7 @@ HERMES_ROOT = Path(os.environ.get("HERMES_ROOT") or Path.home() / ".hermes" / "h
 BOT_HOME = Path(os.environ.get("HERMES_TELEGRAM_HOME") or HERE / "home")
 # The installed Hermes CLI shim that owns the shared checkout.
 HERMES_CLI = Path(os.environ.get("HERMES_CLI") or Path.home() / ".local" / "bin" / "hermes")
-ENV_PATH = Path(os.environ.get("HERMES_TELEGRAM_ENV") or Path.home() / ".hermes_telegram.env")
+ENV_PATH = Path(os.environ.get("HERMES_TELEGRAM_ENV") or BOT_HOME / ".env")
 
 BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 # Chat ids are numeric (user/group/channel), optionally -100… prefixed for supergroups.
@@ -483,6 +483,114 @@ def cmd_doctor(env: dict) -> int:
     return 0 if ok else 1
 
 
+# ── install: wire a fresh clone into an existing Hermes install ─────────────
+
+def _link(name: str, target: Path, force: bool = False) -> tuple[bool, str]:
+    """Point BOT_HOME/name at target. Creates parents, never copies the target's data."""
+    dest = BOT_HOME / name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.is_symlink():
+        if os.path.realpath(dest) == os.path.realpath(target):
+            return True, "already linked"
+        if not force:
+            return False, f"exists as a symlink to {os.readlink(dest)} (use --force)"
+        dest.unlink()
+    elif dest.exists():
+        return False, f"exists as a real file/dir (move it aside, or use --force)"
+    dest.symlink_to(target)
+    return True, f"-> {target}"
+
+
+def install_wizard(force: bool = False) -> int:
+    """Wire this checkout into the Hermes install it should borrow from.
+
+    Everything borrowed is a symlink; only config.yaml and .env are real files here.
+    Nothing outside this directory is written to, so `hermes update` cannot touch it.
+    """
+    print("\nHermes Telegram — install")
+    print("─" * 44)
+
+    if not HERMES_CLI.exists():
+        print(f"✗ hermes CLI not found at {HERMES_CLI}")
+        print("  Install Hermes first, or set HERMES_CLI=/path/to/hermes")
+        return 1
+    try:
+        import subprocess
+        p = subprocess.run([str(HERMES_CLI), "--version"], capture_output=True, text=True, timeout=60)
+        ver = (p.stdout or p.stderr).strip().splitlines()[0] if (p.stdout or p.stderr).strip() else "?"
+        print(f"✓ hermes CLI: {ver[:60]}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"✗ cannot run hermes: {exc}")
+        return 1
+
+    # The owner's home is whatever the CLI resolves to — that's the install we borrow from.
+    owner_home = Path.home() / ".hermes"
+    if not (owner_home / "auth.json").exists():
+        print(f"✗ {owner_home}/auth.json missing — run `hermes` once and log in first.")
+        return 1
+    print(f"✓ owner install: {owner_home}")
+
+    ok = True
+    for name, target in (
+        ("installs", owner_home / "installs"),   # shared venv, ~430 MB
+        ("tools", owner_home / "tools"),         # shared tool binaries
+        ("skills", owner_home / "skills"),       # shared skill library
+        ("auth.json", owner_home / "auth.json"), # one credential, no copy
+    ):
+        good, why = _link(name, target, force=force)
+        print(f"{'✓' if good else '✗'} {name}: {why}")
+        ok = ok and good
+
+    # config.yaml: seed from the owner's, so telegram/model settings come along.
+    cfg = BOT_HOME / "config.yaml"
+    if not cfg.exists():
+        src = owner_home / "config.yaml"
+        if src.exists():
+            cfg.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+            os.chmod(cfg, 0o600)
+            print("✓ config.yaml: seeded from the owner install")
+        else:
+            print("✗ config.yaml: owner has none; copy one in by hand")
+            ok = False
+    else:
+        print("✓ config.yaml: present")
+
+    env = ENV_PATH
+    if not env.exists():
+        env.write_text(
+            "# Copy of env.example. Fill these in, then run `./ht setup`.\n"
+            "TELEGRAM_BOT_TOKEN=\n"
+            "TELEGRAM_ALLOWED_USERS=\n"
+            "TELEGRAM_HOME_CHANNEL=\n", encoding="utf-8")
+        os.chmod(env, 0o600)
+        print(f"✓ {env.name}: created (mode 600) — fill it in next")
+    else:
+        print(f"✓ {env.name}: present")
+
+    # The override only wins once it is enabled as a user plugin.
+    try:
+        import subprocess
+        p = subprocess.run([str(HERMES_CLI), "plugins", "enable", "telegram-platform"],
+                           capture_output=True, text=True, timeout=120,
+                           env={**os.environ, "HERMES_HOME": str(BOT_HOME)})
+        good = p.returncode == 0
+        print(f"{'✓' if good else '✗'} plugin override enabled"
+              + ("" if good else f": {(p.stdout or p.stderr).strip()[:100]}"))
+        ok = ok and good
+    except Exception as exc:  # noqa: BLE001
+        print(f"✗ plugin enable failed: {exc}")
+        ok = False
+
+    print()
+    if not ok:
+        print("Some steps failed — fix the ✗ lines above and re-run with --force.")
+        return 1
+    token = read_env().get("TELEGRAM_BOT_TOKEN", "")
+    print("Next: fill in home/.env, then run ./ht setup"
+          if not token else "Next: ./ht up")
+    return 0
+
+
 # ── cli ─────────────────────────────────────────────────────────────────────
 
 def main(argv: list[str]) -> int:
@@ -490,6 +598,8 @@ def main(argv: list[str]) -> int:
     env = read_env()
     if cmd == "setup":
         return setup_wizard()
+    if cmd == "install":
+        return install_wizard(force="--force" in argv)
     if cmd == "run":
         return run_foreground(env)
     if cmd == "send":

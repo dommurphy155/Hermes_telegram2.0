@@ -5,6 +5,8 @@
 # (home/), with an editable copy of the adapter at home/plugins/platforms/telegram/.
 # The install is shared (engine, venv, login, skills) but never modified.
 #
+#   ./ht install   wire this clone into the local Hermes install (run once)
+#   ./ht setup     token/chat-id wizard
 #   ./ht up        start the bot gateway (foreground; Ctrl-C to stop)
 #   ./ht down      stop it
 #   ./ht status    running? how many commands registered?
@@ -42,6 +44,10 @@ case "${1:-}" in
   doctor)
     exec "$PY" "$DIR/hermes_telegram.py" doctor
     ;;
+  install)
+    shift
+    exec "$PY" "$DIR/hermes_telegram.py" install "$@"
+    ;;
   setup)
     exec "$PY" "$DIR/hermes_telegram.py" setup
     ;;
@@ -50,7 +56,7 @@ case "${1:-}" in
     exec "$PY" "$DIR/hermes_telegram.py" send "$@"
     ;;
   *)
-    echo "usage: ./ht {up|down|status|log|doctor|setup|send \"text\"}"
+    echo "usage: ./ht {install|setup|up|down|status|log|doctor|send \"text\"}"
     exit 2
     ;;
 esac
