@@ -14,7 +14,7 @@ home/auth.json
 # ── Runtime state: generated, not authored ─────────────────────────────────────
 # home/ is a live HERMES_HOME: venv, caches, sessions, locks, databases, bot
 # runtime. Only the authored source under home/plugins/ belongs in the repo.
-home/*
+home/
 !home/plugins/
 !home/plugins/**
 home/plugins/platforms/telegram/__pycache__/
