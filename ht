@@ -1,0 +1,56 @@
+#!/bin/sh
+# D M's Telegram bot.
+#
+# Runs the real Hermes gateway adapter against this project's own HERMES_HOME
+# (home/), with an editable copy of the adapter at home/plugins/platforms/telegram/.
+# The install is shared (engine, venv, login, skills) but never modified.
+#
+#   ./ht up        start the bot gateway (foreground; Ctrl-C to stop)
+#   ./ht down      stop it
+#   ./ht status    running? how many commands registered?
+#   ./ht log       tail the gateway log
+#   ./ht doctor    verify the wiring
+#   ./ht setup     re-run the token/chat-id wizard
+#   ./ht send "x"  one-shot send to the home channel
+
+set -e
+
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+BOT_HOME=${HERMES_TELEGRAM_HOME:-$DIR/home}
+export HERMES_HOME="$BOT_HOME"
+
+HERMES_CLI=$(command -v hermes || echo "$HOME/.local/bin/hermes")
+PY=/usr/bin/python3
+[ -x "$PY" ] || PY=$(command -v python3)
+
+case "${1:-}" in
+  up)
+    shift
+    exec "$HERMES_CLI" gateway run --replace "$@"
+    ;;
+  down|stop)
+    exec "$HERMES_CLI" gateway stop
+    ;;
+  status)
+    "$HERMES_CLI" gateway status
+    echo
+    "$PY" "$DIR/hermes_telegram.py" status
+    ;;
+  log)
+    tail -f "$BOT_HOME/logs/gateway.log"
+    ;;
+  doctor)
+    exec "$PY" "$DIR/hermes_telegram.py" doctor
+    ;;
+  setup)
+    exec "$PY" "$DIR/hermes_telegram.py" setup
+    ;;
+  send)
+    shift
+    exec "$PY" "$DIR/hermes_telegram.py" send "$@"
+    ;;
+  *)
+    echo "usage: ./ht {up|down|status|log|doctor|setup|send \"text\"}"
+    exit 2
+    ;;
+esac

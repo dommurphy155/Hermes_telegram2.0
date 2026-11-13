@@ -1,0 +1,87 @@
+# ── Secrets: never commit ──────────────────────────────────────────────────────
+# The live bot token. Setup writes this; the repo carries a template instead.
+.env
+*.env
+!env.example
+home/.env
+
+# auth.json is a symlink to the owner install's credentials. Never follow it.
+auth.json
+home/auth.json
+*.pem
+*.key
+
+# ── Runtime state: generated, not authored ─────────────────────────────────────
+# home/ is a live HERMES_HOME: venv, caches, sessions, locks, databases, bot
+# runtime. Only the authored source under home/plugins/ belongs in the repo.
+home/*
+!home/plugins/
+!home/plugins/**
+home/plugins/platforms/telegram/__pycache__/
+home/plugins/**/__pycache__/
+
+state.db
+state.db-shm
+state.db-wal
+kanban.db
+kanban.db-shm
+kanban.db-wal
+projects.db
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+sessions/
+logs/
+cache/
+.cache/
+pending_messages/
+audio_cache/
+image_cache/
+memories/
+vault/
+pairing/
+runtime/
+state/
+hooks/
+cron/
+kanban/
+plugin-update-checks/
+source-checks/
+spawn-ledger.json
+spawn-ledger.json.lock
+processes.json
+processes.json.lock
+gateway.lock
+gateway.pid
+gateway.sock
+gateway_state.json
+gateway-starts.log
+channel_directory.json
+install_id
+install_id.lock
+*.lock
+*.log
+*.sock
+*.pid
+
+# ── Machine-specific symlinks (recreated per box, see README) ──────────────────
+# installs/  -> <hermes>/installs   (shared venv, 430 MB)
+# tools/     -> <hermes>/tools      (shared tool binaries)
+# skills/    -> <hermes>/skills     (shared skill library)
+installs
+tools
+skills
+
+# ── Vendored Hermes copy (deliberately removed; backup archives excluded) ──────
+backup/
+*.tar.gz
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+.DS_Store
